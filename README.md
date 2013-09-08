@@ -1,33 +1,51 @@
-Overview
---------
+# Project Mission
 
-Mongoose is easy to use web server. It also can be used as embedded web server library to provide web interface to applications.  
+Project mission is to provide easy to use, powerful, embeddable web server.
 
-Mongoose executable does not depend on any external library or configuration. If it is copied to any directory and launched from there, it starts to serve that directory on port 8080 (so to access files, go to http://localhost:8080). If some additional config is required - for example, different listening port or IP-based access control, that can be done via command line flags or configuration file, which should be created in the same directory where mongoose itself lives. This makes Mongoose perfect for all sorts of demos, quick tests, file sharing, and Web programming.
+# Overview
 
+Mongoose keeps the balance between functionality and
+simplicity by carefully selected list of features:
 
-Features
---------
-
-- Crossplatform - works on Windows, MacOS and most flavors of UNIX
-- CGI, SSL, SSI, Digest (MD5) authorization, Websocket, WEbDAV support
-- Resumed download, URL rewrite support
-- IP-based ACL, Windows service, GET, POST, HEAD, PUT, DELETE methods
-- Excluding files from serving by URI pattern
+- Liberal, commercial-friendly
+  [MIT license](http://en.wikipedia.org/wiki/MIT_License)
+- Works on Windows, Mac, UNIX, iPhone, Android, and many other platforms
+- Scripting and database support (Lua Server Pages + Sqlite, see
+  [page.lp](https://github.com/valenok/mongoose/blob/master/test/page.lp) ),
+  which provides ready to go, powerful web development platform in
+  one single-click executable with **no dependencies**: forget LAMP!
+- Support for CGI, SSL, SSI, Digest (MD5) authorization, Websocket, WEbDAV
+- Resumed download, URL rewrite, file blacklist, IP-based ACL, Windows service
 - Download speed limit based on client subnet or URI pattern
-- Small footprint: executable size is 40 kB on Linux 2.6 i386 system
-- Embeddable with simple and clean API ([mongoose.h](https://github.com/valenok/mongoose/blob/master/mongoose.h)). The source is in single [mongoose.c](https://github.com/valenok/mongoose/blob/master/mongoose.c) file to make things easy.
-- Embedding examples: [hello.c](https://github.com/valenok/mongoose/blob/master/examples/hello.c), [post.c](https://github.com/valenok/mongoose/blob/master/examples/post.c), [upload.c](https://github.com/valenok/mongoose/blob/master/examples/upload.c), [websocket.c](https://github.com/valenok/mongoose/blob/master/examples/websocket.c)
-- Python and C# bindings
+- Simple and clean embedding API,
+  [mongoose.h](https://github.com/valenok/mongoose/blob/master/mongoose.h).
+  The source is in single
+  [mongoose.c](https://github.com/valenok/mongoose/blob/master/mongoose.c) file
+  to make things easy. Embedding examples:
+  [hello.c](https://github.com/valenok/mongoose/blob/master/examples/hello.c),
+  [post.c](https://github.com/valenok/mongoose/blob/master/examples/post.c),
+  [upload.c](https://github.com/valenok/mongoose/blob/master/examples/upload.c),
+  [websocket.c](https://github.com/valenok/mongoose/blob/master/examples/websocket.c)
+- HTTP client capable of sending arbitrary HTTP/HTTPS requests
+- [User Manual](https://github.com/valenok/mongoose/blob/master/UserManual.md)
+
+Note that Windows and MacOS binaries have following 3rd party software
+compiled in:
+  <a href="http://wolfssl.com">WolfSSL lightweight SSL library</a>,
+  <a href="http://sqlite.org">SQLite embedded database</a>,
+  <a href="http://lua.org">Lua embedded scripting engine</a>.
+
+Questions can be asked at
+[mongoose-users@google.com](http://groups.google.com/group/mongoose-users)
+mailing list.
+
+[![&nbsp;](https://cruel-carlota.pagodabox.com/2a613890c1f4b60e5919a9c1dd3caca2 "githalytics.com")](http://githalytics.com/valenok/mongoose)
 
 
-Mailing list
-------------
+# Author
 
-You can read it online, subscribe to, or send a message at [mongoose-users](http://groups.google.com/group/mongoose-users).
-
-
-Keep Sergey happy
------------------
-
-I have a [books wishlist](http://amzn.com/w/1OC2ZCPTQYIEP?sort=priority) on Amazon. If you feel brave, you can buy me a book!
+I am Sergey Lyubka, a software engineer from Galway, Ireland. I started
+working on Mongoose in 2004, and since then continuously improve it,
+investing thousands of hours of work. My other project I'm contributing to the
+community for free is
+[Super Light Regular Expression library](http://code.google.com/p/slre).

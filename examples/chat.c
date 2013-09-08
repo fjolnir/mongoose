@@ -56,9 +56,10 @@ static pthread_rwlock_t rwlock = PTHREAD_RWLOCK_INITIALIZER;
 // Get session object for the connection. Caller must hold the lock.
 static struct session *get_session(const struct mg_connection *conn) {
   int i;
+  const char *cookie = mg_get_header(conn, "Cookie");
   char session_id[33];
   time_t now = time(NULL);
-  mg_get_cookie(conn, "session", session_id, sizeof(session_id));
+  mg_get_cookie(cookie, "session", session_id, sizeof(session_id));
   for (i = 0; i < MAX_SESSIONS; i++) {
     if (sessions[i].expire != 0 &&
         sessions[i].expire > now &&
@@ -325,34 +326,25 @@ static void redirect_to_ssl(struct mg_connection *conn,
   }
 }
 
-static void *event_handler(enum mg_event event,
-                           struct mg_connection *conn) {
+static int begin_request_handler(struct mg_connection *conn) {
   const struct mg_request_info *request_info = mg_get_request_info(conn);
-  void *processed = "yes";
+  int processed = 1;
 
-  if (event == MG_NEW_REQUEST) {
-    if (!request_info->is_ssl) {
-      redirect_to_ssl(conn, request_info);
-    } else if (!is_authorized(conn, request_info)) {
-      redirect_to_login(conn, request_info);
-    } else if (strcmp(request_info->uri, authorize_url) == 0) {
-      authorize(conn, request_info);
-    } else if (strcmp(request_info->uri, "/ajax/get_messages") == 0) {
-      ajax_get_messages(conn, request_info);
-    } else if (strcmp(request_info->uri, "/ajax/send_message") == 0) {
-      ajax_send_message(conn, request_info);
-    } else {
-      // No suitable handler found, mark as not processed. Mongoose will
-      // try to serve the request.
-      processed = NULL;
-    }
-  } else if (event == MG_EVENT_LOG) {
-    printf("%s\n", (const char *) mg_get_request_info(conn)->ev_data);
-    processed = NULL;
+  if (!request_info->is_ssl) {
+    redirect_to_ssl(conn, request_info);
+  } else if (!is_authorized(conn, request_info)) {
+    redirect_to_login(conn, request_info);
+  } else if (strcmp(request_info->uri, authorize_url) == 0) {
+    authorize(conn, request_info);
+  } else if (strcmp(request_info->uri, "/ajax/get_messages") == 0) {
+    ajax_get_messages(conn, request_info);
+  } else if (strcmp(request_info->uri, "/ajax/send_message") == 0) {
+    ajax_send_message(conn, request_info);
   } else {
-    processed = NULL;
+    // No suitable handler found, mark as not processed. Mongoose will
+    // try to serve the request.
+    processed = 0;
   }
-
   return processed;
 }
 
@@ -365,6 +357,7 @@ static const char *options[] = {
 };
 
 int main(void) {
+  struct mg_callbacks callbacks;
   struct mg_context *ctx;
 
   // Initialize random number generator. It will be used later on for
@@ -372,7 +365,9 @@ int main(void) {
   srand((unsigned) time(0));
 
   // Setup and start Mongoose
-  if ((ctx = mg_start(&event_handler, NULL, options)) == NULL) {
+  memset(&callbacks, 0, sizeof(callbacks));
+  callbacks.begin_request = begin_request_handler;
+  if ((ctx = mg_start(&callbacks, NULL, options)) == NULL) {
     printf("%s\n", "Cannot start chat server, fatal exit");
     exit(EXIT_FAILURE);
   }

@@ -4,6 +4,7 @@
 
 use IO::Socket;
 use File::Path;
+use Cwd;
 use strict;
 use warnings;
 #use diagnostics;
@@ -19,9 +20,10 @@ my $test_dir_uri = "test_dir";
 my $root = 'test';
 my $test_dir = $root . $dir_separator. $test_dir_uri;
 my $config = 'mongoose.conf';
-my $exe = '.' . $dir_separator . 'mongoose';
-my $embed_exe = '.' . $dir_separator . 'embed';
-my $unit_test_exe = '.' . $dir_separator . 'unit_test';
+my $exe_ext = on_windows() ? '.exe' : '';
+my $mongoose_exe = '.' . $dir_separator . 'mongoose' . $exe_ext;
+my $embed_exe = '.' . $dir_separator . 'embed' . $exe_ext;
+my $unit_test_exe = '.' . $dir_separator . 'unit_test' . $exe_ext;
 my $exit_code = 0;
 
 my @files_to_delete = ('debug.log', 'access.log', $config, "$root/a/put.txt",
@@ -51,9 +53,9 @@ sub get_num_of_log_entries {
 # Send the request to the 127.0.0.1:$port and return the reply
 sub req {
   my ($request, $inc, $timeout) = @_;
-  my $sock = IO::Socket::INET->new(Proto=>"tcp",
-    PeerAddr=>'127.0.0.1', PeerPort=>$port);
-  fail("Cannot connect: $!") unless $sock;
+  my $sock = IO::Socket::INET->new(Proto => 6,
+    PeerAddr => '127.0.0.1', PeerPort => $port);
+  fail("Cannot connect to http://127.0.0.1:$port : $!") unless $sock;
   $sock->autoflush(1);
   foreach my $byte (split //, $request) {
     last unless print $sock $byte;
@@ -97,7 +99,6 @@ sub spawn {
   if (on_windows()) {
     my @args = split /\s+/, $cmdline;
     my $executable = $args[0];
-    $executable .= '.exe';
     Win32::Spawn($executable, $cmdline, $pid);
     die "Cannot spawn @_: $!" unless $pid;
   } else {
@@ -146,11 +147,6 @@ if ($^O =~ /darwin|bsd|linux/) {
   }
 }
 
-if (scalar(@ARGV) > 0 and $ARGV[0] eq 'embedded') {
-  do_embedded_test();
-  exit 0;
-}
-
 if (scalar(@ARGV) > 0 and $ARGV[0] eq 'unit') {
   do_unit_test();
   exit 0;
@@ -158,23 +154,24 @@ if (scalar(@ARGV) > 0 and $ARGV[0] eq 'unit') {
 
 # Make sure we load config file if no options are given.
 # Command line options override config files settings
-write_file($config, "access_log_file access.log\nlistening_ports 12345\n");
-spawn("$exe -p $port");
+write_file($config, "access_log_file access.log\n" .
+           "listening_ports 127.0.0.1:12345\n");
+spawn("$mongoose_exe -listening_ports 127.0.0.1:$port");
 o("GET /test/hello.txt HTTP/1.0\n\n", 'HTTP/1.1 200 OK', 'Loading config file');
 unlink $config;
 kill_spawned_child();
 
 # Spawn the server on port $port
-my $cmd = "$exe ".
-  "-listening_ports $port ".
+my $cmd = "$mongoose_exe ".
+  "-listening_ports 127.0.0.1:$port ".
   "-access_log_file access.log ".
   "-error_log_file debug.log ".
   "-cgi_environment CGI_FOO=foo,CGI_BAR=bar,CGI_BAZ=baz " .
   "-extra_mime_types .bar=foo/bar,.tar.gz=blah,.baz=foo " .
-  '-put_delete_passwords_file test/passfile ' .
+  '-put_delete_auth_file test/passfile ' .
   '-access_control_list -0.0.0.0/0,+127.0.0.1 ' .
   "-document_root $root ".
-  "-hide_files_patterns **exploit.pl ".
+  "-hide_files_patterns **exploit.PL ".
   "-enable_keep_alive yes ".
   "-url_rewrite_patterns /aiased=/etc/,/ta=$test_dir";
 $cmd .= ' -cgi_interpreter perl' if on_windows();
@@ -219,11 +216,10 @@ write_file("$root/a+.txt", '');
 o("GET /a+.txt HTTP/1.0\n\n", 'HTTP/1.1 200 OK', 'URL-decoding, + in URI');
 
 # Test HTTP version parsing
-o("GET / HTTPX/1.0\r\n\r\n", '400 Bad Request', 'Bad HTTP Version', 0);
-o("GET / HTTP/x.1\r\n\r\n", '505 HTTP', 'Bad HTTP maj Version');
-o("GET / HTTP/1.1z\r\n\r\n", '505 HTTP', 'Bad HTTP min Version');
-o("GET / HTTP/02.0\r\n\r\n", '505 HTTP version not supported',
-  'HTTP Version >1.1');
+o("GET / HTTPX/1.0\r\n\r\n", '^HTTP/1.1 500', 'Bad HTTP Version', 0);
+o("GET / HTTP/x.1\r\n\r\n", '^HTTP/1.1 505', 'Bad HTTP maj Version', 0);
+o("GET / HTTP/1.1z\r\n\r\n", '^HTTP/1.1 505', 'Bad HTTP min Version', 0);
+o("GET / HTTP/02.0\r\n\r\n", '^HTTP/1.1 505', 'HTTP Version >1.1', 0);
 
 # File with leading single dot
 o("GET /.leading.dot.txt HTTP/1.0\n\n", 'abc123', 'Leading dot 1');
@@ -248,8 +244,10 @@ write_file($path, read_file($root . $dir_separator . 'env.cgi'));
 chmod(0755, $path);
 o("GET /$test_dir_uri/x/ HTTP/1.0\n\n", "Content-Type: text/html\r\n\r\n",
   'index.cgi execution');
+
+my $cwd = getcwd();
 o("GET /$test_dir_uri/x/ HTTP/1.0\n\n",
-  "SCRIPT_FILENAME=test/test_dir/x/index.cgi", 'SCRIPT_FILENAME');
+  "SCRIPT_FILENAME=$cwd/test/test_dir/x/index.cgi", 'SCRIPT_FILENAME');
 o("GET /ta/x/ HTTP/1.0\n\n", "SCRIPT_NAME=/ta/x/index.cgi",
   'Aliases SCRIPT_NAME');
 o("GET /hello.txt HTTP/1.1\nConnection: close\n\n", 'Connection: close',
@@ -357,6 +355,8 @@ unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   unlink "$root/.htpasswd";
 
 
+  o("GET /dir%20with%20spaces/hello.cgi HTTP/1.0\n\r\n",
+      'HTTP/1.1 200 OK.+hello', 'CGI script with spaces in path');
   o("GET /env.cgi HTTP/1.0\n\r\n", 'HTTP/1.1 200 OK', 'GET CGI file');
   o("GET /bad2.cgi HTTP/1.0\n\n", "HTTP/1.1 123 Please pass me to the client\r",
     'CGI Status code text');
@@ -406,7 +406,7 @@ unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   my $abs_path = on_windows() ? 'ssi6.shtml' : 'ssi5.shtml';
   my $word = on_windows() ? 'boot loader' : 'root';
   o("GET /$abs_path HTTP/1.0\n\n",
-    "ssi_begin.+$word.+ssi_end", 'SSI #include file= (absolute)');
+    "ssi_begin.+$word.+ssi_end", 'SSI #include abspath');
   o("GET /ssi7.shtml HTTP/1.0\n\n",
     'ssi_begin.+Unit test.+ssi_end', 'SSI #include "..."');
   o("GET /ssi8.shtml HTTP/1.0\n\n",
@@ -415,9 +415,9 @@ unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   # Manipulate the passwords file
   my $path = 'test_htpasswd';
   unlink $path;
-  system("$exe -A $path a b c") == 0
+  system("$mongoose_exe -A $path a b c") == 0
     or fail("Cannot add user in a passwd file");
-  system("$exe -A $path a b c2") == 0
+  system("$mongoose_exe -A $path a b c2") == 0
     or fail("Cannot edit user in a passwd file");
   my $content = read_file($path);
   $content =~ /^b:a:\w+$/gs or fail("Bad content of the passwd file");
@@ -426,7 +426,6 @@ unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   do_PUT_test();
   kill_spawned_child();
   do_unit_test();
-  do_embedded_test();
 }
 
 sub do_PUT_test {
@@ -456,79 +455,8 @@ sub do_PUT_test {
 }
 
 sub do_unit_test {
-  my $cmd = "cc -g -W -Wall -o $unit_test_exe $root/unit_test.c -I. ".
-    "-pthread -DNO_SSL ";
-  if (on_windows()) {
-    $cmd = "cl $root/embed.c mongoose.c /I. /nologo /DNO_SSL ".
-    "/DLISTENING_PORT=\\\"$port\\\" /link /out:$embed_exe.exe ws2_32.lib ";
-  }
-  print $cmd, "\n";
-  system($cmd) == 0 or fail("Cannot compile unit test");
-  system($unit_test_exe) == 0 or fail("Unit test failed!");
-}
-
-sub do_embedded_test {
-  my $cmd = "cc -W -Wall -o $embed_exe $root/embed.c mongoose.c -I. ".
-  "-pthread -DNO_SSL -DLISTENING_PORT=\\\"$port\\\"";
-  if (on_windows()) {
-    $cmd = "cl $root/embed.c mongoose.c /I. /nologo /DNO_SSL ".
-    "/DLISTENING_PORT=\\\"$port\\\" /link /out:$embed_exe.exe ws2_32.lib ";
-  }
-  print $cmd, "\n";
-  system($cmd) == 0 or fail("Cannot compile embedded unit test");
-
-  spawn("./$embed_exe");
-  o("GET /test_get_header HTTP/1.0\nHost: blah\n\n",
-    'Value: \[blah\]', 'mg_get_header', 0);
-  o("GET /test_get_var?a=b&my_var=foo&c=d HTTP/1.0\n\n",
-    'Value: \[foo\]', 'mg_get_var 1', 0);
-  o("GET /test_get_var?my_var=foo&c=d HTTP/1.0\n\n",
-    'Value: \[foo\]', 'mg_get_var 2', 0);
-  o("GET /test_get_var?a=b&my_var=foo HTTP/1.0\n\n",
-    'Value: \[foo\]', 'mg_get_var 3', 0);
-  o("POST /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
-    "my_var=foo", 'Value: \[foo\]', 'mg_get_var 4', 0);
-  o("POST /test_get_var HTTP/1.0\nContent-Length: 18\n\n".
-    "a=b&my_var=foo&c=d", 'Value: \[foo\]', 'mg_get_var 5', 0);
-  o("POST /test_get_var HTTP/1.0\nContent-Length: 14\n\n".
-    "a=b&my_var=foo", 'Value: \[foo\]', 'mg_get_var 6', 0);
-  o("GET /test_get_var?a=one%2btwo&my_var=foo& HTTP/1.0\n\n",
-    'Value: \[foo\]', 'mg_get_var 7', 0);
-  o("GET /test_get_var?my_var=one%2btwo&b=two%2b HTTP/1.0\n\n",
-    'Value: \[one\+two\]', 'mg_get_var 8', 0);
-
-  # + in form data MUST be decoded to space
-  o("POST /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
-    "my_var=b+c", 'Value: \[b c\]', 'mg_get_var 9', 0);
-
-  # Test that big POSTed vars are not truncated
-  my $my_var = 'x' x 64000;
-  o("POST /test_get_var HTTP/1.0\nContent-Length: 64007\n\n".
-    "my_var=$my_var", 'Value size: \[64000\]', 'mg_get_var 10', 0);
-
-  # Other methods should also work
-  o("PUT /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
-    "my_var=foo", 'Value: \[foo\]', 'mg_get_var 11', 0);
-
-  o("POST /test_get_request_info?xx=yy HTTP/1.0\nFoo: bar\n".
-    "Content-Length: 3\n\na=b",
-    'Method: \[POST\].URI: \[/test_get_request_info\].'.
-    'HTTP version: \[1.0\].HTTP header \[Foo\]: \[bar\].'.
-    'HTTP header \[Content-Length\]: \[3\].'.
-    'Query string: \[xx=yy\].'.
-    'Remote IP: \[\d+\].Remote port: \[\d+\].'.
-    'Remote user: \[\]'
-    , 'request_info', 0);
-  o("GET /not_exist HTTP/1.0\n\n", 'Error: \[404\]', '404 handler', 0);
-  o("bad request\n\n", 'Error: \[400\]', '* error handler', 0);
-#	o("GET /foo/secret HTTP/1.0\n\n",
-#		'401 Unauthorized', 'mg_protect_uri', 0);
-#	o("GET /foo/secret HTTP/1.0\nAuthorization: Digest username=bill\n\n",
-#		'401 Unauthorized', 'mg_protect_uri (bill)', 0);
-#	o("GET /foo/secret HTTP/1.0\nAuthorization: Digest username=joe\n\n",
-#		'200 OK', 'mg_protect_uri (joe)', 0);
-
-  kill_spawned_child();
+  my $target = on_windows() ? 'wi' : 'un';
+  system("make $target") == 0 or fail("Unit test failed!");
 }
 
 print "SUCCESS! All tests passed.\n";
